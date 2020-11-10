@@ -5,6 +5,7 @@ import numpy as np
 import joblib
 from time import time
 import albumentations as albu
+from tqdm import tqdm
 
 from model import ViT
 from data import get_loader
@@ -16,18 +17,18 @@ make_reproducible()
 # load config
 parser = argparse.ArgumentParser()
 parser.add_argument('--logdir', default='baseline')
-parser.add_argument('--batch_size', default=128)
-parser.add_argument('--lr', default=0.1)
-parser.add_argument('--epochs', default=300)
-parser.add_argument('--weight_decay', default=0.0001)
-parser.add_argument('--num_workers', default=4)
-parser.add_argument('--dim', default=256)
-parser.add_argument('--mlp_dim', default=512)
-parser.add_argument('--depth', default=3)
-parser.add_argument('--heads', default=4)
-parser.add_argument('--dropout', default=0.1)
-parser.add_argument('--emb_dropout', default=0.1)
-parser.add_argument('--amp', default=0)
+parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--lr', type=int, default=0.1)
+parser.add_argument('--epochs', type=int, default=100)
+parser.add_argument('--weight_decay', type=int, default=0.0001)
+parser.add_argument('--num_workers', type=int, default=4)
+parser.add_argument('--dim', type=int, default=256)
+parser.add_argument('--mlp_dim', type=int, default=512)
+parser.add_argument('--depth', type=int, default=3)
+parser.add_argument('--heads', type=int, default=4)
+parser.add_argument('--dropout', type=int, default=0.1)
+parser.add_argument('--emb_dropout', type=int, default=0.1)
+parser.add_argument('--amp', type=int, default=0)
 args = parser.parse_args()
 args.amp = bool(args.amp)
 
@@ -83,7 +84,7 @@ kwargs = model.parameters()
 optimizer = torch.optim.SGD(kwargs, lr=args.lr, weight_decay=args.weight_decay, momentum=0.9)
 
 # define lr scheduler
-scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, pct_start=0.1, max_lr=args.lr, steps_per_epoch=len(train_loader),
+scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, pct_start=0.01, max_lr=args.lr, steps_per_epoch=len(train_loader),
                                                 epochs=args.epochs)
 
 # mixed precision
