@@ -7,7 +7,7 @@ from time import time
 import albumentations as albu
 from tqdm import tqdm
 
-from model import ViT
+from model2 import ViT
 from data import get_loader
 from utils import make_reproducible, mkdir
 
@@ -28,9 +28,12 @@ parser.add_argument('--depth', type=int, default=3)
 parser.add_argument('--heads', type=int, default=4)
 parser.add_argument('--dropout', type=int, default=0.1)
 parser.add_argument('--emb_dropout', type=int, default=0.1)
+parser.add_argument('--patch_size', type=int, default=2)
+parser.add_argument('--rel_pos', type=int, default=0)
 parser.add_argument('--amp', type=int, default=0)
 args = parser.parse_args()
 args.amp = bool(args.amp)
+args.rel_pos = bool(args.rel_pos)
 
 # define device
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -65,14 +68,15 @@ print(f'# Train Samples: {len(x_train)} | # Val Samples: {len(x_val)}')
 # define model
 model = ViT(
     image_size=32,
-    patch_size=2,
+    patch_size=args.patch_size,
     num_classes=10,
     dim=args.dim,
     depth=args.depth,
     heads=args.heads,
     mlp_dim=args.mlp_dim,
     dropout=args.dropout,
-    emb_dropout=args.emb_dropout
+    emb_dropout=args.emb_dropout,
+    rel_pos=args.rel_pos
 ).to(device)
 print(f'# Parameters: {sum(p.numel() for p in model.parameters())}')
 
