@@ -28,12 +28,17 @@ parser.add_argument('--depth', type=int, default=3)
 parser.add_argument('--heads', type=int, default=4)
 parser.add_argument('--dropout', type=int, default=0.1)
 parser.add_argument('--emb_dropout', type=int, default=0.1)
-parser.add_argument('--patch_size', type=int, default=2)
-parser.add_argument('--rel_pos', type=int, default=0)
+parser.add_argument('--patch_size', type=int, default=4)
+parser.add_argument('--rel_pos', type=int, default=1)
+parser.add_argument('--rel_pos_mul', type=int, default=0)
 parser.add_argument('--amp', type=int, default=0)
+parser.add_argument('--n_out_convs', type=int, default=2)
+parser.add_argument('--squeeze_conv', type=int, default=1)
 args = parser.parse_args()
 args.amp = bool(args.amp)
 args.rel_pos = bool(args.rel_pos)
+args.rel_pos_mul = bool(args.rel_pos_mul)
+args.squeeze_conv = bool(args.squeeze_conv)
 
 # define device
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -76,7 +81,10 @@ model = ViT(
     mlp_dim=args.mlp_dim,
     dropout=args.dropout,
     emb_dropout=args.emb_dropout,
-    rel_pos=args.rel_pos
+    rel_pos=args.rel_pos,
+    rel_pos_mul=args.rel_pos_mul,
+    n_out_convs=args.n_out_convs,
+    squeeze_conv=args.squeeze_conv
 ).to(device)
 print(f'# Parameters: {sum(p.numel() for p in model.parameters())}')
 
