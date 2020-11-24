@@ -5,14 +5,12 @@ import numpy as np
 import joblib
 from time import time
 import albumentations as albu
-from tqdm import tqdm
+import pandas as pd
+import os
 
 from model2 import ViT
 from data import get_loader
 from utils import make_reproducible, mkdir
-
-# for reproduciblity
-make_reproducible()
 
 # load config
 parser = argparse.ArgumentParser()
@@ -34,11 +32,18 @@ parser.add_argument('--rel_pos_mul', type=int, default=0)
 parser.add_argument('--amp', type=int, default=0)
 parser.add_argument('--n_out_convs', type=int, default=2)
 parser.add_argument('--squeeze_conv', type=int, default=1)
+parser.add_argument('--linformer', type=int, default=1)
+parser.add_argument('--conv_ratio', type=float, default=0.5)
+parser.add_argument('--n_mid_convs', type=int, default=5)
 args = parser.parse_args()
 args.amp = bool(args.amp)
 args.rel_pos = bool(args.rel_pos)
 args.rel_pos_mul = bool(args.rel_pos_mul)
 args.squeeze_conv = bool(args.squeeze_conv)
+args.linformer = bool(args.linformer)
+
+# for reproduciblity
+make_reproducible()
 
 # define device
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -84,9 +89,13 @@ model = ViT(
     rel_pos=args.rel_pos,
     rel_pos_mul=args.rel_pos_mul,
     n_out_convs=args.n_out_convs,
-    squeeze_conv=args.squeeze_conv
+    squeeze_conv=args.squeeze_conv,
+    linformer=args.linformer,
+    conv_ratio=args.conv_ratio,
+    n_mid_convs=args.n_mid_convs
 ).to(device)
-print(f'# Parameters: {sum(p.numel() for p in model.parameters())}')
+n_parameters = sum(p.numel() for p in model.parameters())
+print(f'# Parameters: {n_parameters}')
 
 # define loss
 criterion = nn.CrossEntropyLoss()
@@ -135,7 +144,7 @@ for epoch in range(args.epochs):
         scheduler.step()
 
         train_loss += loss.item() * len(inputs) / len(x_train)
-        train_metric -= (logits.detach().cpu().numpy().argmax(axis=1) == targets.detach().cpu().numpy()).mean() * len(
+        train_metric += (logits.detach().cpu().numpy().argmax(axis=1) == targets.detach().cpu().numpy()).mean() * len(
             inputs) / len(x_train)
 
     str_train_loss = np.round(train_loss, 6)
@@ -157,7 +166,7 @@ for epoch in range(args.epochs):
             val_loss += loss.item() * len(inputs) / len(x_val)
 
     val_preds, val_targets = np.array(val_preds), np.array(val_targets)
-    val_metric = -(val_preds.argmax(axis=1) == val_targets).mean()  # negative accuracy
+    val_metric = (val_preds.argmax(axis=1) == val_targets).mean()  # negative accuracy
     str_val_metric = np.round(val_metric, 6)
     str_val_loss = np.round(val_loss, 6)
     print(f'(val) LOSS: {str_val_loss} | METRIC: {str_val_metric}')
@@ -167,7 +176,7 @@ for epoch in range(args.epochs):
         f.write(
             f'{epoch} - {str_train_loss} - {str_train_metric} - {str_val_loss} - {str_val_metric} - {set(current_lrs)}\n')
 
-    if val_metric < best_val_metric:
+    if val_metric > best_val_metric:
         # save info when improved
         best_info = {
             'epoch': epoch,
@@ -188,4 +197,16 @@ for epoch in range(args.epochs):
         print(f'Runtime: {int(time() - t00)}')
 
 print(f'Best Val Score: {best_val_metric}')
-print(f'Runtime: {int(time() - t0)}')
+runtime = int(time() - t0)
+print(f'Runtime: {runtime}')
+
+if os.path.exists('history.csv'):
+    history = pd.read_csv('history.csv')
+else:
+    history = pd.DataFrame(columns=list(args.__dict__.keys()))
+info = args.__dict__
+info['accuracy'] = best_val_metric
+info['runtime'] = runtime
+info['n_parameters'] = n_parameters
+history = history.append(info, ignore_index=True)
+history.to_csv('history.csv', index=False)
