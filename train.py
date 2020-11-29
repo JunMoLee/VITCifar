@@ -32,18 +32,21 @@ parser.add_argument('--rel_pos_mul', type=int, default=0)
 parser.add_argument('--amp', type=int, default=0)
 parser.add_argument('--n_out_convs', type=int, default=2)
 parser.add_argument('--squeeze_conv', type=int, default=1)
-parser.add_argument('--linformer', type=int, default=1)
+parser.add_argument('--linformer', type=int, default=256)
 parser.add_argument('--conv_ratio', type=float, default=0.5)
 parser.add_argument('--n_mid_convs', type=int, default=5)
+parser.add_argument('--sep_conv', type=int, default=0)
+parser.add_argument('--resume_dir', type=str)
 args = parser.parse_args()
 args.amp = bool(args.amp)
 args.rel_pos = bool(args.rel_pos)
 args.rel_pos_mul = bool(args.rel_pos_mul)
 args.squeeze_conv = bool(args.squeeze_conv)
-args.linformer = bool(args.linformer)
+args.sep_conv = bool(args.sep_conv)
 
 # for reproduciblity
-make_reproducible()
+if args.resume_dir is None:
+    make_reproducible()
 
 # define device
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -92,7 +95,8 @@ model = ViT(
     squeeze_conv=args.squeeze_conv,
     linformer=args.linformer,
     conv_ratio=args.conv_ratio,
-    n_mid_convs=args.n_mid_convs
+    n_mid_convs=args.n_mid_convs,
+    sep_conv=args.sep_conv
 ).to(device)
 n_parameters = sum(p.numel() for p in model.parameters())
 print(f'# Parameters: {n_parameters}')
@@ -111,12 +115,25 @@ scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, pct_start=0.01, max_l
 # mixed precision
 amp_scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
 
-best_val_metric = 0.0
+# resume
+if args.resume_dir is not None:
+    checkpoint = torch.load(f'{args.resume_dir}')
+    start_epoch = checkpoint['epoch'] + 1
+    model.load_state_dict(checkpoint['model'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    scheduler.load_state_dict(checkpoint['scheduler'])
+    best_val_metric = checkpoint['val_metric']
+    if args.amp:
+        amp_scaler.load_state_dict(checkpoint['amp_scaler'])
+    print(f'Loaded state dicts from {args.resume_dir}')
+else:
+    start_epoch = 0
+    best_val_metric = 0.0
 
 # loop
 t0 = time()
 
-for epoch in range(args.epochs):
+for epoch in range(start_epoch, args.epochs):
 
     t00 = time()
 

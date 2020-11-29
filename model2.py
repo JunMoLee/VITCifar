@@ -1,7 +1,7 @@
 import math
 import torch
 import torch.nn.functional as F
-from einops import rearrange, repeat
+from einops import rearrange
 from torch import nn
 from utils import get_rel_pos
 
@@ -190,24 +190,36 @@ class Attention(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, dim, depth, heads, mlp_dim, dropout, rel_pos, rel_pos_mul, seq_len, linformer=False,
-                 conv_ratio=0.5, n_mid_convs=5):
+    def __init__(self, dim, depth, heads, mlp_dim, dropout, rel_pos, rel_pos_mul, seq_len, linformer=0,
+                 conv_ratio=0.5, n_mid_convs=5, sep_conv=False):
         super().__init__()
         self.conv_dim = int(dim*conv_ratio)
         self.attention_dim = dim - self.conv_dim
         self.seq_len = seq_len
         self.layers = nn.ModuleList([])
         if linformer:
-            attention = LinformerSelfAttention(dim=self.attention_dim, seq_len=seq_len, heads=heads, k=dim // 2)
+            attention = LinformerSelfAttention(dim=self.attention_dim, seq_len=seq_len, heads=heads, k=linformer)
         else:
             attention = Attention(dim=self.attention_dim, heads=heads, dropout=dropout, rel_pos=rel_pos, rel_pos_mul=rel_pos_mul)
         for i in range(depth):
-            conv_blocks = [Residual(nn.Sequential(
-                        nn.BatchNorm2d(self.conv_dim),
-                        nn.Conv2d(self.conv_dim, self.conv_dim, kernel_size=3, stride=1, padding=1),
-                        nn.GELU(),
-                        nn.Dropout(dropout)
-                    )) for _ in range(n_mid_convs)]
+            if sep_conv:
+                conv_blocks = [Residual(nn.Sequential(
+                    nn.BatchNorm2d(self.conv_dim),
+                    nn.Conv2d(self.conv_dim, self.conv_dim, kernel_size=3, stride=1, padding=1, groups=self.conv_dim),
+                    nn.GELU(),
+                    nn.Dropout(dropout),
+                    nn.BatchNorm2d(self.conv_dim),
+                    nn.Conv2d(self.conv_dim, self.conv_dim, kernel_size=1, stride=1, padding=0),
+                    nn.GELU(),
+                    nn.Dropout(dropout),
+                )) for _ in range(n_mid_convs)]
+            else:
+                conv_blocks = [Residual(nn.Sequential(
+                    nn.BatchNorm2d(self.conv_dim),
+                    nn.Conv2d(self.conv_dim, self.conv_dim, kernel_size=3, stride=1, padding=1),
+                    nn.GELU(),
+                    nn.Dropout(dropout)
+                )) for _ in range(n_mid_convs)]
             self.layers.append(nn.ModuleList([
                 Residual(PreNorm(self.attention_dim, attention)),
                 nn.Sequential(*conv_blocks),
@@ -227,8 +239,8 @@ class Transformer(nn.Module):
 
 class ViT(nn.Module):
     def __init__(self, *, image_size, patch_size, num_classes, dim, depth, heads, mlp_dim, channels=3, dropout=0.,
-                 emb_dropout=0., rel_pos=None, rel_pos_mul=False, n_out_convs=0, squeeze_conv=False, linformer=False,
-                 conv_ratio=0.5, n_mid_convs=5):
+                 emb_dropout=0., rel_pos=None, rel_pos_mul=False, n_out_convs=0, squeeze_conv=False, linformer=0,
+                 conv_ratio=0.5, n_mid_convs=5, sep_conv=False):
         super().__init__()
         assert image_size % patch_size == 0, 'image dimensions must be divisible by the patch size'
         num_patches = (image_size // patch_size) ** 2
@@ -249,7 +261,7 @@ class ViT(nn.Module):
 
         self.transformer = Transformer(dim, depth, heads, mlp_dim, dropout, self.rel_pos, rel_pos_mul,
                                        seq_len=self.n_row_patch ** 2, linformer=linformer, conv_ratio=conv_ratio,
-                                       n_mid_convs=n_mid_convs)
+                                       n_mid_convs=n_mid_convs, sep_conv=sep_conv)
 
         out_conv = []
         for _ in range(n_out_convs):
