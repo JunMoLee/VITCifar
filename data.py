@@ -20,7 +20,7 @@ class CIFARDataset(Dataset):
         if self.transforms is not None:
             image = self.transforms(image=image)['image']
         image = np.transpose(image, (2, 0, 1))
-        x = torch.from_numpy(image.astype(np.float32)) # [c, h, w]
+        x = torch.from_numpy(image.astype(np.float32))  # [c, h, w]
         y = self.y[idx]
         
         return x, y
