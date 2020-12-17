@@ -24,7 +24,7 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=0.0001)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--dim', type=int, default=256)
-    parser.add_argument('--mlp_dim', type=int, default=512)
+    parser.add_argument('--mlp_dim_mul', type=int, default=2)
     parser.add_argument('--depth', type=int, default=3)
     parser.add_argument('--heads', type=int, default=4)
     parser.add_argument('--dropout', type=float, default=0.1)
@@ -93,7 +93,7 @@ if __name__ == '__main__':
             dim=args.dim,
             depth=args.depth,
             heads=args.heads,
-            mlp_dim=args.mlp_dim,
+            mlp_dim_mul=args.mlp_dim_mul,
             dropout=args.dropout,
             emb_dropout=args.emb_dropout,
             rel_pos=args.rel_pos,
@@ -116,7 +116,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.SGD(kwargs, lr=args.lr, weight_decay=args.weight_decay, momentum=0.9)
 
     # define lr scheduler
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, pct_start=0.01, max_lr=args.lr, steps_per_epoch=len(train_loader),
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, pct_start=0.03, max_lr=args.lr, steps_per_epoch=len(train_loader),
                                                     epochs=args.epochs)
 
     # mixed precision

@@ -199,7 +199,7 @@ class Attention(nn.Module):
 
 # cnn-attention dual path architecture [ADDED]
 class Transformer(nn.Module):
-    def __init__(self, dim, depth, heads, mlp_dim, dropout, rel_pos, rel_pos_mul, seq_len, linformer=0,
+    def __init__(self, dim, depth, heads, mlp_dim_mul, dropout, rel_pos, rel_pos_mul, seq_len, linformer=0,
                  conv_ratio=0.5, n_mid_convs=5, sep_conv=False):
         super().__init__()
         self.seq_len = seq_len
@@ -236,22 +236,23 @@ class Transformer(nn.Module):
                 else:
                     attention = Attention(dim=self.attention_dim, heads=heads, dropout=dropout, rel_pos=rel_pos,
                                           rel_pos_mul=rel_pos_mul)
-                attention_layer = Residual(PreNorm(self.attention_dim, attention))
+                attention_layer = nn.Sequential(
+                    Residual(PreNorm(self.attention_dim, attention)),
+                    Residual(PreNorm(self.attention_dim, FeedForward(self.attention_dim, self.attention_dim*mlp_dim_mul, dropout=dropout)))
+                )
             else:
                 attention_layer = None
             self.layers.append(nn.ModuleList([
                 attention_layer,
                 conv_layer,
-                Residual(PreNorm(dim, FeedForward(dim, mlp_dim, dropout=dropout)))
             ]))
         if (self.conv_dim > 0) & (self.attention_dim > 0):
             self.linear = PreNorm(dim, nn.Linear(dim, dim))
 
     def forward(self, x, mask=None):
-        for attn, conv, ff in self.layers:
+        for attn, conv in self.layers:
             if self.conv_dim == 0:
-                x = attn(x, mask=mask)
-                x = ff(x)
+                x = attn(x)
             elif self.attention_dim == 0:
                 conv_in = rearrange(x, 'b (h w) c -> b c h w', h=int(math.sqrt(self.seq_len)))
                 conv_out = conv(conv_in)
@@ -260,14 +261,14 @@ class Transformer(nn.Module):
                 conv_in = rearrange(x[:, :, :self.conv_dim], 'b (h w) c -> b c h w', h=int(math.sqrt(self.seq_len)))
                 conv_out = conv(conv_in)
                 conv_out = rearrange(conv_out, 'b c h w -> b (h w) c')
-                attn_out = ff(attn(x[:, :, self.conv_dim:], mask=mask))
+                attn_out = attn(x[:, :, self.conv_dim:])
                 x = torch.cat((conv_out, attn_out), dim=-1)
                 x = self.linear(x)
         return x
 
 
 class ViT(nn.Module):
-    def __init__(self, *, image_size, patch_size, num_classes, dim, depth, heads, mlp_dim, channels=3, dropout=0.,
+    def __init__(self, *, image_size, patch_size, num_classes, dim, depth, heads, mlp_dim_mul, channels=3, dropout=0.,
                  emb_dropout=0., rel_pos=None, rel_pos_mul=False, n_out_convs=0, squeeze_conv=False, linformer=0,
                  conv_ratio=0.5, n_mid_convs=5, sep_conv=False):
         super().__init__()
@@ -289,7 +290,7 @@ class ViT(nn.Module):
         self.patch_to_embedding = nn.Linear(patch_dim, dim)
         self.dropout = nn.Dropout(emb_dropout)
 
-        self.transformer = Transformer(dim, depth, heads, mlp_dim, dropout, self.rel_pos, rel_pos_mul,
+        self.transformer = Transformer(dim, depth, heads, mlp_dim_mul, dropout, self.rel_pos, rel_pos_mul,
                                        seq_len=self.n_row_patch ** 2, linformer=linformer, conv_ratio=conv_ratio,
                                        n_mid_convs=n_mid_convs, sep_conv=sep_conv)
         # out convs [ADDED]
@@ -308,10 +309,10 @@ class ViT(nn.Module):
 
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(dim),
-            nn.Linear(dim, mlp_dim),
+            nn.Linear(dim, dim*mlp_dim_mul),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(mlp_dim, num_classes)
+            nn.Linear(dim*mlp_dim_mul, num_classes)
         )
 
     def forward(self, img, mask=None):
